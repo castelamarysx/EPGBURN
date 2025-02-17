@@ -17,9 +17,29 @@ const EPG_URL = 'https://cdn88.xyz/xmltv.php';
 const USERNAME = 'mtfVNd';
 const PASSWORD = 'DAm6ay';
 
+// Browser-like headers
+const DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1'
+};
+
 // Configuração do agente HTTPS para ignorar erros de certificado
 const httpsAgent = new https.Agent({
-    rejectUnauthorized: false
+    rejectUnauthorized: false,
+    keepAlive: true,
+    timeout: 60000
 });
 
 const fetchWithRetry = async (url, options, retries = 3) => {
@@ -29,23 +49,36 @@ const fetchWithRetry = async (url, options, retries = 3) => {
             const response = await fetch(url, {
                 ...options,
                 agent: httpsAgent,
-                timeout: 30000 // 30 segundos
+                timeout: 60000, // 60 segundos
+                headers: {
+                    ...DEFAULT_HEADERS,
+                    ...options.headers
+                }
             });
+            
+            // Log do status e headers da resposta
+            console.log(`Response status: ${response.status}`);
+            console.log('Response headers:', Object.fromEntries(response.headers.entries()));
             
             if (response.ok) {
                 console.log(`Sucesso na tentativa ${i + 1}`);
                 return response;
             }
             
+            const responseText = await response.text();
+            console.log(`Resposta do servidor:`, responseText.substring(0, 200));
             console.log(`Tentativa ${i + 1} falhou com status ${response.status}`);
             
             if (i === retries - 1) {
-                throw new Error(`Status ${response.status} na última tentativa`);
+                throw new Error(`Status ${response.status} na última tentativa. Resposta: ${responseText.substring(0, 200)}`);
             }
         } catch (error) {
             console.error(`Erro na tentativa ${i + 1}:`, error.message);
             if (i === retries - 1) throw error;
-            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i))); // Exponential backoff
+            // Exponential backoff com jitter
+            const delay = Math.floor(1000 * Math.pow(2, i) * (1 + Math.random() * 0.1));
+            console.log(`Aguardando ${delay}ms antes da próxima tentativa...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
     throw new Error(`Failed after ${retries} retries`);
@@ -77,17 +110,16 @@ app.get('/epg', async (req, res) => {
 
         // Fetch from EPG server with retry
         const response = await fetchWithRetry(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
+            method: 'GET',
+            redirect: 'follow'
         });
 
         const xmlData = await response.text();
         console.log('EPG data received, length:', xmlData.length);
         console.log('First 200 chars:', xmlData.substring(0, 200));
 
-        if (!xmlData.includes('<?xml')) {
-            throw new Error('Invalid XML response received');
+        if (!xmlData || xmlData.length < 100) {
+            throw new Error('Response too short, possibly invalid');
         }
 
         // Store in cache
@@ -125,7 +157,8 @@ app.get('/test', (req, res) => {
     res.json({ 
         status: 'ok', 
         message: 'EPG Proxy is running!',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        epg_url: EPG_URL
     });
 });
 
@@ -140,7 +173,8 @@ app.get('/health', (req, res) => {
             misses: cacheStats.misses,
             keys: cacheStats.keys,
             hasEpgData: cache.has('epg_data')
-        }
+        },
+        epg_url: EPG_URL
     });
 });
 
