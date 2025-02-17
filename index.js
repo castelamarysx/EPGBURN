@@ -8,9 +8,11 @@ const cache = new NodeCache({ stdTTL: 3600 }); // Cache for 1 hour
 
 // Enable CORS for all routes
 app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // EPG configuration
-const EPG_URL = 'https://cdn88.xyz/xmltv.php';
+const EPG_URL = 'http://cdn88.xyz/xmltv.php';
 const USERNAME = 'mtfVNd';
 const PASSWORD = 'DAm6ay';
 
@@ -54,7 +56,12 @@ app.get('/epg', async (req, res) => {
             }
         });
 
+        if (!response.ok) {
+            throw new Error(`EPG server responded with status: ${response.status}`);
+        }
+
         const xmlData = await response.text();
+        console.log('EPG data received:', xmlData.substring(0, 200) + '...'); // Log primeiros 200 caracteres
 
         // Store in cache
         cache.set('epg_data', xmlData);
@@ -84,12 +91,20 @@ app.get('/epg', async (req, res) => {
     }
 });
 
+// Test endpoint
+app.get('/test', (req, res) => {
+    res.json({ status: 'ok', message: 'EPG Proxy is running!' });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-const PORT = process.env.PORT || 3000;
+// Mudando para usar a porta do ambiente ou 3001 como fallback
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Proxy server running on port ${PORT}`);
+    console.log(`Test the server at: http://localhost:${PORT}/test`);
+    console.log(`Get EPG data at: http://localhost:${PORT}/epg`);
 }); 
