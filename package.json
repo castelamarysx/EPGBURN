@@ -1,0 +1,16 @@
+{
+  "name": "epg-proxy",
+  "version": "1.0.0",
+  "module": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.js",
+    "dev": "bun --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
+    "node-cache": "^5.1.2",
+    "cors": "^2.8.5"
+  }
+} 
